@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IngestionJobStatus {
+  created
+  uploaded
+  queued
+  processing
+  completed
+  failed
+  cancelled
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(320)
+  passwordHash String    @map("password_hash")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sessions     Session[]
+  projects     Project[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model Project {
+  id        String         @id @default(uuid()) @db.Uuid
+  ownerId   String         @map("owner_id") @db.Uuid
+  name      String         @db.VarChar(80)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner     User           @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  jobs      IngestionJob[]
+  logs      LogEvent[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId, createdAt])
+  @@map("projects")
+}
+
+model IngestionJob {
+  id                    String             @id @default(uuid()) @db.Uuid
+  projectId             String             @map("project_id") @db.Uuid
+  status                IngestionJobStatus @default(created)
+  processingAttempt     Int                @default(0) @map("processing_attempt")
+  uploadRequestId       String?            @map("upload_request_id") @db.Uuid
+  objectKey             String?            @unique @map("object_key") @db.VarChar(512)
+  originalFilename      String?            @map("original_filename") @db.VarChar(255)
+  fileSizeBytes         Int?               @map("file_size_bytes")
+  contentType           String?            @map("content_type") @db.VarChar(128)
+  uploadCompletedAt     DateTime?          @map("upload_completed_at") @db.Timestamptz(6)
+  cleanupPending        Boolean            @default(false) @map("cleanup_pending")
+  bytesProcessed        Int                @default(0) @map("bytes_processed")
+  linesProcessed        Int                @default(0) @map("lines_processed")
+  eventsPersisted       Int                @default(0) @map("events_persisted")
+  malformedLines        Int                @default(0) @map("malformed_lines")
+  failureReason         String?            @map("failure_reason")
+  cancelRequestedAt     DateTime?          @map("cancel_requested_at") @db.Timestamptz(6)
+  processingStartedAt   DateTime?          @map("processing_started_at") @db.Timestamptz(6)
+  processingCompletedAt DateTime?          @map("processing_completed_at") @db.Timestamptz(6)
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project               Project            @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  events                LogEvent[]
+  outbox                ProcessingOutbox?
+
+  @@unique([projectId, uploadRequestId])
+  @@index([projectId, createdAt])
+  @@map("ingestion_jobs")
+}
+
+model LogEvent {
+  id             String        @id @default(uuid()) @db.Uuid
+  projectId      String        @map("project_id") @db.Uuid
+  ingestionJobId String?       @map("ingestion_job_id") @db.Uuid
+  lineNumber     Int?          @map("line_number")
+  timestamp      DateTime?     @db.Timestamptz(6)
+  level          String        @db.VarChar(16)
+  message        String
+  source         String?       @db.VarChar(255)
+  attributes     Json          @default("{}") @db.JsonB
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  ingestionJob   IngestionJob? @relation(fields: [ingestionJobId], references: [id], onDelete: Restrict)
+
+  @@unique([ingestionJobId, lineNumber])
+  @@index([projectId, timestamp(sort: Desc)])
+  @@index([projectId, level, timestamp(sort: Desc)])
+  @@index([projectId, source, timestamp(sort: Desc)])
+  @@map("log_events")
+}
+
+model ProcessingOutbox {
+  id             String       @id @default(uuid()) @db.Uuid
+  ingestionJobId String       @unique @map("ingestion_job_id") @db.Uuid
+  processingAttempt Int       @default(0) @map("processing_attempt")
+  attempts       Int          @default(0)
+  lastError      String?      @map("last_error")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  dispatchedAt   DateTime?    @map("dispatched_at") @db.Timestamptz(6)
+  ingestionJob   IngestionJob @relation(fields: [ingestionJobId], references: [id], onDelete: Cascade)
+
+  @@index([dispatchedAt, createdAt])
+  @@map("processing_outbox")
+}

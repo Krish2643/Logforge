@@ -1,0 +1,37 @@
+{
+  "name": "logforge",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace @logforge/api",
+    "dev:worker": "npm run dev:worker --workspace @logforge/api",
+    "dev:web": "npm run dev --workspace @logforge/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose stop postgres redis",
+    "db:generate": "prisma generate --schema apps/api/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema apps/api/prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema apps/api/prisma/schema.prisma",
+    "db:validate": "prisma validate --schema apps/api/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true,
+    "prisma@6.12.0": true,
+    "@prisma/engines@6.12.0": true,
+    "@prisma/client@6.12.0": true
+  }
+}
